@@ -1,0 +1,40 @@
+@startuml
+
+skinparam defaultTextAlignment center
+
+!include <C4/C4_Context>
+!include <C4/C4_Container>
+
+!define ICONURL https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v2.4.0
+!define DEVICONS https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/master/devicons
+
+!includeurl ICONURL/common.puml
+!includeurl ICONURL/devicons/mysql.puml
+!includeurl ICONURL/font-awesome/server.puml
+!includeurl ICONURL/font-awesome-5/database.puml
+!include DEVICONS/angular.puml
+!include DEVICONS/go.puml
+!include DEVICONS/postgresql.puml
+
+Person(user, "Пользователь")
+
+Container(main_front, "Главная страница", "Angular", "Фронт", "angular")
+Container(main, "Main backend", "Golang", "Сервис для работы пользователей", "go")
+Container(stats, "Statistics", "Golang", "Статистика", "go")
+Container(data, "Data", "Golang", "Данные о задачах, комментариях и тд", "go")
+ContainerDb(user_data, "User data", "Postgresql", "Данные о пользователях", "postgresql")
+ContainerDb(obj_data, "Object data", "Postgresql", "Данные о задачах, комментариях и тд", "postgresql")
+ContainerDb(stats_data, "Statistics data", "Clickhouse", "Статистики")
+ContainerQueue(queue, "Statistics queue", "Kafka", "Очередь")
+
+Rel(user, main_front, "Отвечает на все запросы: аутентификация, создание задач, прожатие лайков, фильтрация, получение списка задач")
+Rel(main_front, main, "Вызов методов", "REST")
+Rel(main, data, "Получает сырую информацию о задачах, комментариях и прочих объектах", "gRPC")
+Rel(main, stats, "Получает статистику об объектах", "gRPC")
+Rel(main, queue, "Пишет в топик")
+Rel(queue, stats, "Читает из топика")
+Rel(main, user_data, "SQL")
+Rel(stats, stats_data, "SQL")
+Rel(data, obj_data, "SQL")
+
+@enduml

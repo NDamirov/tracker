@@ -1,0 +1,59 @@
+@startuml
+
+' hide the spot
+' hide circle
+
+' avoid problems with angled crows feet
+skinparam linetype ortho
+
+entity "User" as e01 {
+  *user_id : number <<generated>>
+  --
+  *username : text
+  *password_hash : text
+}
+
+entity "Task" as e02 {
+  *task_id : number <<generated>>
+  *created_at : timestamp <<generated>>
+  --
+  *author_id : number
+  *assignee_id : number
+  *status : text
+}
+
+entity "Comment" as e03 {
+  *comment_id : number <<generated>>
+  *created_at : timestamp <<generated>>
+  --
+  *author_id : number
+  *comment_text : text
+  *reply_to : number <<optional>>
+  *task_id : number
+}
+
+entity "Like" as e04 {
+  *author : number
+  *created_at : timestamp
+  *post_id : number
+}
+
+entity "View" as e05 {
+  *author : number
+  *created_at : timestamp
+}
+
+
+e02 }o--|| e01
+e02 }o--|| e01
+e03 }o--|| e01
+e04 }o--|| e01
+e05 }o--|| e01
+e04 }o--|| e02
+e03 }o--o| e03
+e03 }o--|| e02
+
+
+
+
+@enduml
