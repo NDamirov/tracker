@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -32,6 +37,12 @@ type AuthToken struct {
 
 var db *sql.DB
 
+func ComputeHash(message string) string {
+	hash := sha256.New()
+	hash.Write([]byte(message))
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
 func CreateUser(w http.ResponseWriter, r *http.Request) {
 	var creds UserCreds
 
@@ -41,9 +52,9 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO users (login, password) VALUES ($1, $2)", creds.Login, creds.Password)
+	_, err = db.Exec("INSERT INTO users (login, phash) VALUES ($1, $2)", creds.Login, ComputeHash(creds.Password))
 	if err != nil {
-		http.Error(w, "User with login already exists", http.StatusForbidden)
+		http.Error(w, fmt.Sprint("User with login already exists", err), http.StatusForbidden)
 		return
 	}
 
@@ -60,7 +71,7 @@ func UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var login string
-	err = db.QueryRow("SELECT login FROM users WHERE login = $1 AND password = $2", creds.Login, creds.Password).Scan(&login)
+	err = db.QueryRow("SELECT login FROM users WHERE login = $1 AND phash = $2", creds.Login, ComputeHash(creds.Password)).Scan(&login)
 	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusForbidden)
 		return
@@ -77,7 +88,7 @@ func UserLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = db.Exec("INSERT INTO tokens (login, token) VALUES ($1, $2)", login, tokenString)
+	_, err = db.Exec("INSERT INTO user_tokens(login, token) VALUES ($1, $2) ON CONFLICT (login) DO UPDATE SET token=EXCLUDED.token", login, tokenString)
 	if err != nil {
 		http.Error(w, "Failed to store token", http.StatusInternalServerError)
 		return
@@ -112,6 +123,17 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		login := claims["login"]
 
+		is_ok := 0
+		err = db.QueryRow("SELECT COUNT(*) FROM user_tokens WHERE login = $1 AND token = $2", login, tokenString).Scan(&is_ok)
+		if err != nil {
+			http.Error(w, "Invalid credentials", http.StatusInternalServerError)
+			return
+		}
+		if is_ok != 1 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		_, err = db.Exec("UPDATE users SET name = $1, surname = $2, birth = $3, email = $4, phone = $5 WHERE login = $6",
 			userInfo.Name, userInfo.Surname, userInfo.Birth, userInfo.Email, userInfo.Phone, login)
 		if err != nil {
@@ -127,12 +149,27 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// Connect to PostgreSQL here
-	connStr := "user=exampleuser dbname=dbname password=example sslmode=disable"
-	db, _ = sql.Open("postgres", connStr)
+	var err error
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"))
+	fmt.Println(connStr)
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		panic(err)
+	}
 
-	// Close db connection when main terminates
 	defer db.Close()
+
+	for i := 0; i < 5; i++ {
+		err = db.Ping()
+		if err != nil {
+			log.Println(err)
+			if i == 4 {
+				panic(err)
+			}
+		}
+		time.Sleep(1000 * time.Millisecond)
+	}
+	fmt.Sprintln("OK")
 
 	router := mux.NewRouter()
 	router.HandleFunc("/user/create", CreateUser).Methods("POST")
@@ -140,4 +177,5 @@ func main() {
 	router.HandleFunc("/user/login", UserLogin).Methods("POST")
 
 	http.ListenAndServe(":8080", router)
+	select {}
 }

@@ -33,6 +33,8 @@ paths:
         '200':
           description: User was successfully updated
         '401':
+          description: Invalid body in request
+        '401':
           description: Unauthorized
         '403':
           description: Invalid request
