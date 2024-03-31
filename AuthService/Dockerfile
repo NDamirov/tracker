@@ -1,7 +1,7 @@
 FROM golang:1.22-alpine
-WORKDIR /auth
-COPY go.* ./
+WORKDIR /tracker
+COPY . ./
+RUN ls
 RUN go mod download -x
-COPY * ./
-RUN go build .
+RUN go build AuthService/main.go
 ENTRYPOINT [ "./main" ]
