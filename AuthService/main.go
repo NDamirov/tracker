@@ -45,13 +45,21 @@ type Task struct {
 	Id          int64  `json:"id"`
 	AuthorId    int64  `json:"author_id"`
 	Description string `json:"description"`
-	Status      string `json:"string"`
+	Status      string `json:"status"`
 	CreatedAt   int64  `json:"created_at"`
+}
+
+type TaskIdRequest struct {
+	Id int64 `json:"task_id"`
+}
+
+type GetTasksRequest struct {
+	PageNum        int `json:"page_number"`
+	ResultsPerPage int `json:"results_per_page"`
 }
 
 var db *sql.DB
 var grpcDataClient pb.TaskDataClient
-var ctx context.Context
 
 func ComputeHash(message string) string {
 	hash := sha256.New()
@@ -70,7 +78,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Exec("INSERT INTO users (login, phash) VALUES ($1, $2)", creds.Login, ComputeHash(creds.Password))
 	if err != nil {
-		http.Error(w, fmt.Sprint("User with login already exists", err), http.StatusForbidden)
+		http.Error(w, "User with login already exists", http.StatusForbidden)
 		return
 	}
 
@@ -150,10 +158,10 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err = db.Exec("UPDATE users SET name = $1, surname = $2, birth = $3, email = $4, phone = $5 WHERE login = $6",
+		_, err = db.Exec("UPDATE users SET name = $1, surname = $2, bdate = to_date($3, 'YYYY-MM-DD'), email = $4, phoneno = $5 WHERE login = $6",
 			userInfo.Name, userInfo.Surname, userInfo.Birth, userInfo.Email, userInfo.Phone, login)
 		if err != nil {
-			http.Error(w, "Invalid request", http.StatusForbidden)
+			http.Error(w, fmt.Sprint("Invalid request ", err), http.StatusForbidden)
 			return
 		}
 	} else {
@@ -164,29 +172,49 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func checkLogin(w http.ResponseWriter, decoder *json.Decoder) *int64 {
-	var creds UserCreds
-
-	err := decoder.Decode(&creds)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+func checkLogin(w http.ResponseWriter, r *http.Request) *int64 {
+	tokenString := r.Header.Get("token")
+	if tokenString == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return nil
 	}
 
-	var user_id int64
-	err = db.QueryRow("SELECT id FROM users WHERE login = $1 AND phash = $2", creds.Login, ComputeHash(creds.Password)).Scan(&user_id)
-	if err != nil {
-		http.Error(w, "Invalid credentials", http.StatusForbidden)
+	token, _ := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, http.ErrAbortHandler
+		}
+
+		return []byte(JwtSecret), nil
+	})
+
+	var userId int64
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		login := claims["login"]
+
+		is_ok := 1
+		err := db.QueryRow("SELECT COUNT(*) FROM user_tokens WHERE login = $1 AND token = $2", login, tokenString).Scan(&is_ok)
+		if err != nil || is_ok == 0 {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return nil
+		}
+
+		err = db.QueryRow("SELECT id FROM users WHERE login = $1", login).Scan(&userId)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return nil
+		}
+	} else {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return nil
 	}
 
-	return &user_id
+	return &userId
 }
 
 func CreateTask(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
-	user_id := checkLogin(w, decoder)
-	if user_id == nil {
+	userId := checkLogin(w, r)
+	if userId == nil {
 		return
 	}
 
@@ -197,8 +225,8 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := grpcDataClient.CreateTask(ctx, &pb.Task{
-		AuthorId:    *user_id,
+	resp, err := grpcDataClient.CreateTask(context.Background(), &pb.Task{
+		AuthorId:    *userId,
 		Description: task.Description,
 		Status:      task.Status,
 		CreatedAt:   timestamppb.Now(),
@@ -209,6 +237,7 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if resp.StatusCode != 0 {
+		log.Printf("Not zero status code: %s\n", resp.Message)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -217,8 +246,8 @@ func CreateTask(w http.ResponseWriter, r *http.Request) {
 
 func UpdateTask(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
-	user_id := checkLogin(w, decoder)
-	if user_id == nil {
+	userId := checkLogin(w, r)
+	if userId == nil {
 		return
 	}
 	var task Task
@@ -228,22 +257,23 @@ func UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := grpcDataClient.UpdateTask(ctx, &pb.UpdateTaskRequest{
+	resp, err := grpcDataClient.UpdateTask(context.Background(), &pb.UpdateTaskRequest{
 		Task: &pb.Task{
+			TaskId:      task.Id,
 			AuthorId:    task.AuthorId,
 			Description: task.Description,
 			Status:      task.Status,
 			CreatedAt:   timestamppb.New(time.Unix(task.CreatedAt, 0)),
 		},
-		UserId: *user_id,
+		UserId: *userId,
 	})
 	if err != nil {
 		log.Printf("GRPC failed: %s\n", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
 	if resp.StatusCode != 0 {
-		w.WriteHeader(http.StatusInternalServerError)
+		http.Error(w, resp.Message, http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -251,19 +281,19 @@ func UpdateTask(w http.ResponseWriter, r *http.Request) {
 
 func DeleteTask(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
-	user_id := checkLogin(w, decoder)
-	if user_id == nil {
+	userId := checkLogin(w, r)
+	if userId == nil {
 		return
 	}
-	var task Task
+	var task TaskIdRequest
 	err := decoder.Decode(&task)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resp, err := grpcDataClient.DeleteTask(ctx, &pb.DeleteTaskRequest{
+	resp, err := grpcDataClient.DeleteTask(context.Background(), &pb.DeleteTaskRequest{
 		TaskId: task.Id,
-		UserId: *user_id,
+		UserId: *userId,
 	})
 	if err != nil {
 		log.Printf("GRPC failed: %s\n", err)
@@ -279,26 +309,36 @@ func DeleteTask(w http.ResponseWriter, r *http.Request) {
 
 func GetTask(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
-	user_id := checkLogin(w, decoder)
-	if user_id == nil {
+	userId := checkLogin(w, r)
+	if userId == nil {
 		return
 	}
-	var task Task
+	var task TaskIdRequest
 	err := decoder.Decode(&task)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	resp, err := grpcDataClient.GetTask(ctx, &pb.GetTaskRequest{
+	resp, err := grpcDataClient.GetTask(context.Background(), &pb.GetTaskRequest{
 		TaskId: task.Id,
-		UserId: *user_id,
+		UserId: *userId,
 	})
 	if err != nil {
 		log.Printf("GRPC failed: %s\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	switch resp.Error.StatusCode {
+	case 0:
+	case 2, 3:
+		http.Error(w, resp.Error.Message, http.StatusForbidden)
+		return
+	default:
+		http.Error(w, resp.Error.Message, http.StatusInternalServerError)
+		return
+	}
 
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(Task{
 		Id:          resp.Task.TaskId,
 		AuthorId:    resp.Task.AuthorId,
@@ -306,19 +346,39 @@ func GetTask(w http.ResponseWriter, r *http.Request) {
 		Status:      resp.Task.Status,
 		CreatedAt:   resp.Task.CreatedAt.Seconds,
 	})
-	w.WriteHeader(http.StatusOK)
 }
 
 func GetTasks(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
-	user_id := checkLogin(w, decoder)
-	if user_id == nil {
+	userId := checkLogin(w, r)
+	if userId == nil {
 		return
 	}
-	resp, err := grpcDataClient.GetTasks(ctx, &pb.GetTasksRequest{})
+
+	var req GetTasksRequest
+	err := decoder.Decode(&req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := grpcDataClient.GetTasks(context.Background(), &pb.GetTasksRequest{
+		UserId:         *userId,
+		PageNumber:     int32(req.PageNum),
+		ResultsPerPage: int32(req.ResultsPerPage),
+	})
 	if err != nil {
 		log.Printf("GRPC failed: %s\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	switch resp.Error.StatusCode {
+	case 0:
+	case 2, 3:
+		http.Error(w, resp.Error.Message, http.StatusForbidden)
+		return
+	default:
+		http.Error(w, resp.Error.Message, http.StatusInternalServerError)
 		return
 	}
 	tasks := []Task{}
@@ -331,30 +391,28 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:   task.CreatedAt.Seconds,
 		})
 	}
-	json.NewEncoder(w).Encode(tasks)
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(tasks)
 }
 
 func main() {
 	var err error
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"))
-	db, err = sql.Open("postgres", connStr)
-	if err != nil {
-		panic(err)
-	}
-
-	defer db.Close()
 
 	for i := 0; i < 5; i++ {
-		err = db.Ping()
+		db, err = sql.Open("postgres", connStr)
 		if err != nil {
 			log.Println(err)
 			if i == 4 {
 				panic(err)
 			}
+		} else {
+			break
 		}
 		time.Sleep(1000 * time.Millisecond)
 	}
+
+	defer db.Close()
 
 	conn, err := grpc.Dial(os.Getenv("DATA_SERVICE_ADDRESS"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -362,18 +420,17 @@ func main() {
 	}
 	defer conn.Close()
 	grpcDataClient = pb.NewTaskDataClient(conn)
-	ctx, _ = context.WithTimeout(context.Background(), time.Second)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/user/create", CreateUser).Methods("POST")
 	router.HandleFunc("/user/update", UpdateUser).Methods("PUT")
 	router.HandleFunc("/user/login", UserLogin).Methods("POST")
 
-	router.HandleFunc("/post/create", CreateTask).Methods("POST")
-	router.HandleFunc("/post/update", UpdateTask).Methods("PUT")
-	router.HandleFunc("/post/delete", DeleteTask).Methods("POST")
-	router.HandleFunc("/post/get_task", GetTask).Methods("GET")
-	router.HandleFunc("/post/get_tasks", GetTasks).Methods("GET")
+	router.HandleFunc("/task/create", CreateTask).Methods("POST")
+	router.HandleFunc("/task/update", UpdateTask).Methods("PUT")
+	router.HandleFunc("/task/delete", DeleteTask).Methods("POST")
+	router.HandleFunc("/task/get_task", GetTask).Methods("GET")
+	router.HandleFunc("/task/get_tasks", GetTasks).Methods("GET")
 
 	http.ListenAndServe(":8080", router)
 	select {}

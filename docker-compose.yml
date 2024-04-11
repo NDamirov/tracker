@@ -38,7 +38,7 @@ services:
       DATABASE_USER: user
       DATABASE_PASSWORD: password
       DATABASE_PORT: 5432
-      DATA_SERVICE_ADDRESS: "object_service:8095"
+      DATA_SERVICE_ADDRESS: "object_service:8295"
     ports:
       - 8095:8080
 
@@ -52,5 +52,7 @@ services:
       DATABASE_USER: user
       DATABASE_PASSWORD: password
       DATABASE_PORT: 5432
-      HOST: localhost
-      PORT: 8095
+      HOST: ''
+      PORT: 8295
+    ports:
+      - 8195:8295
