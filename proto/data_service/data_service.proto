@@ -1,0 +1,58 @@
+syntax="proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package data_service;
+option go_package = "proto/data_service";
+
+service TaskData {
+    rpc CreateTask(Task) returns (Error) {}
+    rpc UpdateTask(UpdateTaskRequest) returns (Error) {}
+    rpc DeleteTask(DeleteTaskRequest) returns (Error) {}
+    rpc GetTask(GetTaskRequest) returns (GetTaskResponse) {}
+    rpc GetTasks(GetTasksRequest) returns (GetTasksResponse) {}
+}
+
+message Task {
+    int64 task_id = 1;
+    int64 author_id = 2;
+    string description = 3;
+    string status = 4;
+    google.protobuf.Timestamp created_at = 5;
+}
+
+message UpdateTaskRequest {
+    int64 user_id = 1;
+    Task task = 2;
+}
+
+message DeleteTaskRequest {
+    int64 user_id = 1;
+    int64 task_id = 2;
+}
+
+message Error {
+    int32 status_code = 1;
+    string message = 2;
+}
+
+message GetTaskRequest {
+    int64 user_id = 1;
+    int64 task_id = 2;
+}
+
+message GetTaskResponse {
+    Error error = 1;
+    Task task = 2;
+}
+
+message GetTasksRequest {
+    int64 user_id = 1;
+    int32 page_number = 2;
+    int32 results_per_page = 3;
+}
+
+message GetTasksResponse {
+    Error error = 1;
+    repeated Task tasks = 2;
+}

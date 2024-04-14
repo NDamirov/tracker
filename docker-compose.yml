@@ -1,0 +1,58 @@
+version: '3.1'
+
+services:
+  user_db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db
+    volumes:
+      - ./db_init/user.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - 5482:5432
+
+  object_db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db
+    volumes:
+      - ./db_init/data.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - 5483:5432
+
+  auth_service:
+    build:
+      dockerfile: ./AuthService/Dockerfile
+      context: .
+    depends_on:
+      - user_db
+      - object_service
+    environment:
+      DATABASE_HOST: user_db
+      DATABASE_NAME: db
+      DATABASE_USER: user
+      DATABASE_PASSWORD: password
+      DATABASE_PORT: 5432
+      DATA_SERVICE_ADDRESS: "object_service:8295"
+    ports:
+      - 8095:8080
+
+  object_service:
+    build:
+      dockerfile: ./DataService/Dockerfile
+      context: .
+    environment:
+      DATABASE_HOST: object_db
+      DATABASE_NAME: db
+      DATABASE_USER: user
+      DATABASE_PASSWORD: password
+      DATABASE_PORT: 5432
+      HOST: ''
+      PORT: 8295
+    ports:
+      - 8195:8295
