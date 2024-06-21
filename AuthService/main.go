@@ -421,9 +421,10 @@ func ViewTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	time.Sleep(5 * time.Second)
 	var err error
 
-	brokers := []string{"kafka:29092"}
+	brokers := []string{"0.0.0.0:9092"}
 
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true

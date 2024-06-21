@@ -29,16 +29,16 @@
 #   "phone": "string"
 # }' -v
 
-# curl -X 'POST' \
-#   '127.0.0.1:8095/task/create' \
-#   -H 'accept: */*' \
-#   -H 'token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHBpcnkiOjE3MTMwMjI1OTAsImxvZ2luIjoidXNlciJ9.bhpN_V4ioUrpSS59CS6BB9RddG3OSGzMHxZ5Fsb9Ero' \
-#   -H 'Content-Type: application/json' \
-#   -d '{
-#   "description": "string",
-#   "status": "string",
-#   "created_at": 0
-# }' -v
+curl -X 'POST' \
+  '127.0.0.1:8095/react/like' \
+  -H 'accept: */*' \
+  -H 'token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHBpcnkiOjE3MTkwNDgxMjUsImxvZ2luIjoidXNlciJ9.vJ82lRENIvD7fwn2KcLH8SgzAoSEPJIiSiTo7K9YBe8' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "description": "string",
+  "status": "string",
+  "created_at": 0
+}' -v
 
 # curl -X 'PUT' \
 #   '127.0.0.1:8095/task/update' \
