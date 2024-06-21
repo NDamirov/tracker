@@ -25,6 +25,38 @@ services:
     ports:
       - 5483:5432
 
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    environment:
+      CLICKHOUSE_DB: reactions
+      CLICKHOUSE_USER: user
+      CLICKHOUSE_PASSWORD: alphabet
+    ports:
+      - 18423:8123
+      - 19400:9000
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.4
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 22181:2181
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.4
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
   auth_service:
     build:
       dockerfile: ./AuthService/Dockerfile
@@ -56,3 +88,14 @@ services:
       PORT: 8295
     ports:
       - 8195:8295
+
+  stat_service:
+    build:
+      dockerfile: ./StatService/Dockerfile
+      context: .
+    depends_on:
+      - auth_service
+      - clickhouse
+      - kafka
+    ports:
+      - 8295:8080
