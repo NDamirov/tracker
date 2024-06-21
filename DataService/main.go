@@ -83,7 +83,6 @@ func getTask(taskId int64) (*Task, error) {
 }
 
 func (s *server) CreateTask(c context.Context, task *pb.Task) (*pb.Error, error) {
-	log.Println("Creating task")
 	_, err := db.Exec("INSERT INTO tasks(author_id, task_status, task_description, created_at) VALUES ($1, $2, $3, $4)",
 		task.AuthorId, task.Status, task.Description, task.CreatedAt.AsTime().Unix())
 	if err != nil {
@@ -100,7 +99,6 @@ func (s *server) CreateTask(c context.Context, task *pb.Task) (*pb.Error, error)
 }
 
 func (s *server) UpdateTask(c context.Context, request *pb.UpdateTaskRequest) (*pb.Error, error) {
-	log.Printf("Updating task")
 	task, err := getTask(request.Task.TaskId)
 	if err != nil {
 		log.Printf("Failed to get task: %s", err)
@@ -136,7 +134,6 @@ func (s *server) UpdateTask(c context.Context, request *pb.UpdateTaskRequest) (*
 }
 
 func (s *server) DeleteTask(c context.Context, request *pb.DeleteTaskRequest) (*pb.Error, error) {
-	log.Printf("Deleting task")
 	task, err := getTask(request.TaskId)
 	if err != nil {
 		log.Printf("Failed to get task: %s", err)
@@ -172,7 +169,6 @@ func (s *server) DeleteTask(c context.Context, request *pb.DeleteTaskRequest) (*
 }
 
 func (s *server) GetTask(c context.Context, request *pb.GetTaskRequest) (*pb.GetTaskResponse, error) {
-	log.Println("Getting task")
 	task, err := getTask(request.TaskId)
 	if err != nil {
 		log.Printf("Failed to get task: %s", err)
@@ -188,14 +184,6 @@ func (s *server) GetTask(c context.Context, request *pb.GetTaskRequest) (*pb.Get
 			Error: &pb.Error{
 				StatusCode: 2,
 				Message:    "Invalid id",
-			},
-		}, nil
-	}
-	if task.AuthorId != request.UserId {
-		return &pb.GetTaskResponse{
-			Error: &pb.Error{
-				StatusCode: 3,
-				Message:    "Not enough rights",
 			},
 		}, nil
 	}
@@ -215,8 +203,7 @@ func (s *server) GetTask(c context.Context, request *pb.GetTaskRequest) (*pb.Get
 }
 
 func (s *server) GetTasks(c context.Context, request *pb.GetTasksRequest) (*pb.GetTasksResponse, error) {
-	log.Println("Getting tasks")
-	rows, err := db.Query("SELECT task_id FROM tasks WHERE author_id = $1 ORDER BY task_id DESC OFFSET $2 LIMIT $3", request.UserId, request.ResultsPerPage*request.PageNumber, request.ResultsPerPage)
+	rows, err := db.Query("SELECT task_id FROM tasks ORDER BY task_id DESC OFFSET $2 LIMIT $3", request.ResultsPerPage*request.PageNumber, request.ResultsPerPage)
 	tasks := []*pb.Task{}
 	if err != nil {
 		log.Printf("Failed to insert task: %s", err)

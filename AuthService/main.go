@@ -14,6 +14,8 @@ import (
 
 	pb "main/proto/data_service"
 
+	"github.com/IBM/sarama"
+
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -60,6 +62,7 @@ type GetTasksRequest struct {
 
 var db *sql.DB
 var grpcDataClient pb.TaskDataClient
+var producer sarama.SyncProducer
 
 func ComputeHash(message string) string {
 	hash := sha256.New()
@@ -395,8 +398,41 @@ func GetTasks(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tasks)
 }
 
+func react(w http.ResponseWriter, r *http.Request, t string) {
+	msg := &sarama.ProducerMessage{
+		Topic: "my_topic",
+		Value: sarama.ByteEncoder(t),
+	}
+
+	_, _, err := producer.SendMessage(msg)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func LikeTask(w http.ResponseWriter, r *http.Request) {
+	react(w, r, "like")
+}
+
+func ViewTask(w http.ResponseWriter, r *http.Request) {
+	react(w, r, "view")
+}
+
 func main() {
 	var err error
+
+	brokers := []string{"kafka:29092"}
+
+	config := sarama.NewConfig()
+	config.Producer.Return.Successes = true
+
+	producer, err = sarama.NewSyncProducer(brokers, config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", os.Getenv("DATABASE_HOST"), os.Getenv("DATABASE_PORT"), os.Getenv("DATABASE_USER"), os.Getenv("DATABASE_PASSWORD"), os.Getenv("DATABASE_NAME"))
 
 	for i := 0; i < 5; i++ {
@@ -431,6 +467,9 @@ func main() {
 	router.HandleFunc("/task/delete", DeleteTask).Methods("POST")
 	router.HandleFunc("/task/get_task", GetTask).Methods("GET")
 	router.HandleFunc("/task/get_tasks", GetTasks).Methods("GET")
+
+	router.HandleFunc("/react/like", LikeTask).Methods("POST")
+	router.HandleFunc("/react/view", ViewTask).Methods("POST")
 
 	http.ListenAndServe(":8080", router)
 	select {}
